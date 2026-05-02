@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prescription-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prescription
+  template:
+    metadata:
+      labels:
+        app: prescription
+    spec:
+      containers:
+      - name: prescription-service
+        image: prescription-service:latest
+        imagePullPolicy: Never # Uses local docker image in Minikube
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi" # Resource limits
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prescription-service
+spec:
+  selector:
+    app: prescription
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: NodePort # External access for Minikube
