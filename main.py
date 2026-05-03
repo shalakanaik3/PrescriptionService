@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 import datetime
 import pandas as pd
 import os
+import json # Added for logging formatting
 
 # --- DATABASE ---
 DATABASE_URL = "sqlite:///./prescriptions.db"
@@ -28,10 +29,23 @@ class Prescription(Base):
 
 Base.metadata.create_all(bind=engine)
 
+# --- COMPLIANCE LOGGING (PII MASKING) ---
+def log_compliance_event(message, data):
+    # Masking the patient_id for security compliance
+    masked_data = data.copy()
+    if "patient_id" in masked_data:
+        masked_data["patient_id"] = "***"
+    
+    log_entry = {
+        "timestamp": str(datetime.datetime.utcnow()),
+        "event": message,
+        "details": masked_data
+    }
+    # This prints directly to Docker/Terminal logs
+    print(f"COMPLIANCE_LOG: {json.dumps(log_entry)}")
+
 # --- APP SETUP ---
 app = FastAPI()
-
-# Pointing to the templates folder
 templates = Jinja2Templates(directory="templates")
 
 # --- SEEDING DATA ---
@@ -55,18 +69,15 @@ def seed_data():
                 )
                 db.add(p)
             db.commit()
-            print("CSV Data Seeded Successfully!")
+            print("SUCCESS: CSV Data Seeded (220 records).")
     db.close()
 
 # --- ROUTES ---
 
-# THIS IS THE FRONTEND URL: http://localhost:8000/
 @app.get("/", response_class=HTMLResponse)
 async def serve_frontend(request: Request):
-    # Note: TemplateResponse with a capital T and R for your Python version
     return templates.TemplateResponse("index.html", {"request": request})
 
-# API for the frontend to get data
 @app.get("/v1/prescriptions")
 def get_prescriptions():
     db = SessionLocal()
@@ -74,7 +85,6 @@ def get_prescriptions():
     db.close()
     return data
 
-# API for the frontend to save data
 class PrescriptionCreate(BaseModel):
     appointment_id: int
     patient_id: int
@@ -90,5 +100,9 @@ async def create_prescription(payload: PrescriptionCreate):
     db.add(new_presc)
     db.commit()
     db.refresh(new_presc)
+    
+    # --- TRIGGER THE LOG MESSAGE ---
+    log_compliance_event("PRESCRIPTION_CREATED", payload.dict())
+    
     db.close()
     return new_presc
